@@ -1,0 +1,8 @@
+{
+  "name": "discord-cli-portal",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "playwright": "^1.49"
+  }
+}

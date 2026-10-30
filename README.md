@@ -11,11 +11,11 @@ Part of the [piekstra CLI family](https://github.com/piekstra/cli-common)
 
 ```console
 $ discord send "#general" "deploy finished ✅"
-sent message 1394201032425340938 to channel 1112223334445556667
+sent message 1234567890123456789 to channel 1112223334445556667
 
 $ discord messages "#general" -n 3
 [2026-07-15 17:18] caleb (1394200…): kicking off the deploy
-[2026-07-15 17:20] deploy-bot (1394201…): deploy finished ✅
+[2026-07-15 17:20] deploy-bot (1234567…): deploy finished ✅
 [2026-07-15 17:21] caleb (1394202…): 🎉
 ```
 
@@ -64,11 +64,11 @@ discord guilds                        # servers the bot has joined
 discord channels                      # channels of the default guild
 discord channels "My Server"          # …or by guild name / ID
 discord messages "#general" -n 50     # recent messages, oldest first
-discord messages 1112223334445556667 --before 1394201032425340938
+discord messages 1112223334445556667 --before 1234567890123456789
 discord send "#general" "hello"       # by #name (needs a guild) or channel ID
 some-command | discord send "#alerts" # message text from stdin
-discord send "#general" --reply-to 1394201032425340938 "replying"
-discord delete "#general" 1394201032425340938  # confirms; --force to skip
+discord send "#general" --reply-to 1234567890123456789 "replying"
+discord delete "#general" 1234567890123456789  # confirms; --force to skip
 discord api GET /users/@me            # raw REST v10 passthrough (always JSON)
 discord api POST /channels/<ID>/messages --data '{"content":"hi"}'
 ```

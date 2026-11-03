@@ -90,7 +90,8 @@ response) keeps `reset-token` and `create` usable through UI changes.
 - **Dates as snowflakes.** A snowflake holds Unix milliseconds minus 1420070400000, shifted left
   22 bits, so `before=<that>` starts at a date in one step. `discord_messages` does this for
   `until`, and stops its walk at `since`. It walks with `before` alone, because a read with
-  `after` starts from the oldest match.
+  `after` starts from the oldest match. Its cursor holds the last message's id, so a deep page
+  costs what a first page does, and a message deleted between pages skips nothing.
 - **204s.** Some mutations (e.g. `DELETE /channels/{id}/messages/{id}` via
   `discord api`) return `204 No Content`; the client renders that as JSON
   `null`.

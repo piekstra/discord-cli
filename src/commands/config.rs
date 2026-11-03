@@ -36,6 +36,12 @@ pub fn run(ctx: &Ctx, cmd: &ConfigCmd) -> Result<(), CliError> {
 }
 
 fn apply(cfg: &mut Config, key: &str, value: Option<&str>) -> Result<(), CliError> {
+    if key == "secret_sources" {
+        cfg.secret_sources = value
+            .map(|text| text.parse().map_err(CliError::Usage))
+            .transpose()?;
+        return Ok(());
+    }
     let value = value.map(str::to_string);
     match key {
         "guild" => cfg.guild = value,
@@ -63,5 +69,16 @@ mod tests {
         apply(&mut cfg, "guild", None).unwrap();
         assert!(cfg.guild.is_none());
         assert!(apply(&mut cfg, "nope", Some("x")).is_err());
+
+        apply(&mut cfg, "secret_sources", Some("keychain")).unwrap();
+        assert_eq!(cfg.secret_sources, Some("keychain".parse().unwrap()));
+        apply(&mut cfg, "secret_sources", None).unwrap();
+        assert!(cfg.secret_sources.is_none());
+        assert_eq!(
+            apply(&mut cfg, "secret_sources", Some("nowhere"))
+                .unwrap_err()
+                .exit_code(),
+            2
+        );
     }
 }

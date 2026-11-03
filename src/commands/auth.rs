@@ -15,8 +15,6 @@ use crate::client::Discord;
 use crate::commands::{Ctx, ACCOUNT};
 use crate::config::Config;
 
-const BIN_UPPER: &str = "DISCORD";
-
 pub fn run(ctx: &Ctx, cmd: &AuthCmd) -> Result<(), CliError> {
     match cmd {
         AuthCmd::Login(args) => login(ctx, args),
@@ -82,14 +80,15 @@ fn logout(ctx: &Ctx, args: &LogoutArgs) -> Result<(), CliError> {
         connector.map_err(connector_token_stays)?;
         if !ctx.cli.common.quiet {
             eprintln!(
-                "{}",
+                "{}; any connector token was removed too",
                 if removed {
-                    "bot token and connector token removed from the keychain"
+                    "bot token removed from the keychain"
                 } else {
-                    "no bot token was stored; any connector token was removed"
+                    "no bot token was stored"
                 }
             );
-            eprintln!("{}", forget_note());
+            eprintln!("{}", pk_cli_mcp::stop_note(BIN));
+            eprintln!("{EXTENSION_NOTE}");
         }
     } else if !ctx.cli.common.quiet {
         // Bot tokens have no server-side session to end.
@@ -108,15 +107,11 @@ fn connector_token_stays(failure: CliError) -> CliError {
     ))
 }
 
-/// What `--forget` cannot reach. A running server keeps the token it started with, and a
-/// variable belongs to whoever set it.
-fn forget_note() -> String {
-    format!(
-        "a running `{BIN} mcp --http` keeps its connector token until it stops; \
-         ${BIN_UPPER}_MCP_TOKEN, if set, still works; revoking the bot itself is on Discord's \
-         developer portal"
-    )
-}
+/// What `--forget` cannot reach beyond the connector token.
+const EXTENSION_NOTE: &str =
+    "note: the Claude Desktop extension and $DISCORD_BOT_TOKEN keep their \
+     own copy of the bot token, until you remove the extension or clear the setting; revoking the \
+     bot itself is on Discord's developer portal";
 
 fn set_credential(ctx: &Ctx, args: &SetCredentialArgs) -> Result<(), CliError> {
     if ctx.creds.get(ACCOUNT)?.is_some() && !args.overwrite {

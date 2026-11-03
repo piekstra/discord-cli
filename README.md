@@ -234,8 +234,9 @@ $ discord --json auth status
 - Non-secret preferences live at
   `${XDG_CONFIG_HOME:-~/.config}/discord/config.json`; on Windows `~` is
   `%USERPROFILE%`.
-- Requests go directly to `discord.com` over TLS (rustls); there is no
-  telemetry and no third-party service.
+- Requests go directly to `discord.com` over TLS (rustls), and there is no
+  telemetry. The only other path is the one you set up: `discord mcp` results
+  reach Claude, and `--http` results pass through your own Cloudflare account.
 - Portal commands capture your user-session header in-process only — it is
   never written to disk, logged, or printed. What does persist is the
   browser profile at `~/.cache/discord-cli/portal/profile` (a normal

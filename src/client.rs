@@ -7,7 +7,7 @@
 use std::time::Duration;
 
 use pk_cli_core::transport::secure_redirects;
-use pk_cli_core::CliError;
+use pk_cli_core::{CliError, Reason};
 use pk_cli_secrets::Secret;
 use serde_json::{json, Value};
 
@@ -220,10 +220,15 @@ fn into_value(resp: reqwest::blocking::Response) -> Result<Value, CliError> {
     }
     let detail = error_detail(resp.json::<Value>().ok());
     match status.as_u16() {
-        401 => Err(CliError::Auth(format!(
-            "Discord rejected the bot token (HTTP 401{detail}) — run `discord auth login` again"
-        ))),
-        403 => Err(CliError::Auth(format!("{NO_ACCESS} (HTTP 403{detail})"))),
+        401 => Err(
+            CliError::Auth(format!("Discord rejected the bot token (HTTP 401{detail})"))
+                .because(Reason::CredentialRefused)
+                .with_remedy("run `discord auth login` again"),
+        ),
+        403 => {
+            Err(CliError::Auth(format!("{NO_ACCESS} (HTTP 403{detail})"))
+                .because(Reason::Forbidden))
+        }
         404 => Err(CliError::NotFound(format!("HTTP 404 from Discord{detail}"))),
         429 => Err(CliError::Upstream(format!(
             "rate limited by Discord (HTTP 429{detail})"
@@ -308,6 +313,37 @@ mod tests {
             .unwrap_err();
         assert!(err.to_string().contains("leaves https"), "{err}");
         assert_eq!(seen.lock().unwrap().len(), 1);
+    }
+
+    fn answered(status: u16) -> CliError {
+        let (base, _) = stub(move |_| {
+            let body = r#"{"message": "An example refusal", "code": 1}"#;
+            format!(
+                "HTTP/1.1 {status} Refused\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                body.len()
+            )
+        });
+        Discord::at(&base, Secret::new("dummy-token"))
+            .unwrap()
+            .me()
+            .unwrap_err()
+    }
+
+    #[test]
+    fn a_401_and_a_403_are_told_apart_by_type_and_both_exit_3() {
+        let refused = answered(401);
+        assert_eq!(refused.reason(), Some(Reason::CredentialRefused));
+        assert!(refused.is_auth());
+        assert_eq!(refused.remedy(), Some("run `discord auth login` again"));
+
+        let forbidden = answered(403);
+        assert_eq!(forbidden.reason(), Some(Reason::Forbidden));
+        assert!(forbidden.is_auth());
+        assert!(forbidden.message().starts_with(NO_ACCESS), "{forbidden}");
+        assert!(
+            forbidden.message().contains("An example refusal"),
+            "{forbidden}"
+        );
     }
 
     #[test]

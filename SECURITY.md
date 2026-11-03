@@ -11,7 +11,8 @@ this repository's Security tab. We aim to acknowledge within a few days.
 |---|---|
 | OS keychain (`piekstra.discord`, `bot-token`) | Your bot token, from `discord auth login` |
 | OS keychain (`piekstra.discord`, `mcp-http-token`) | Only after `discord mcp --new-token`: the bearer token of `mcp --http` |
-| `${XDG_CONFIG_HOME:-~/.config}/discord/config.json` (on Windows, `~` is `%USERPROFILE%`) | A default server, the bot's username, and a 1Password item's name. No secret. |
+| Claude Desktop's settings | Only with the extension: its own copy of your bot token, passed to `discord mcp` as `$DISCORD_BOT_TOKEN` |
+| `${XDG_CONFIG_HOME:-~/.config}/discord/config.json` (on Windows, `~` is `%USERPROFILE%`) | A default server, the bot's username, a 1Password item's name, and `secret_sources`. No secret. |
 | `~/.cache/discord-cli/portal/profile` | The browser profile of the `discord app` portal commands, a normal logged-in browser. `discord app logout` deletes it. |
 
 A token enters by stdin, `--from-env <VAR>` or a no-echo prompt, never as an argument. Requests
@@ -27,9 +28,10 @@ send tool would be steerable by that text. Every request a tool makes is a `GET`
 hold the requests to that. A channel or server name is only looked up, and only an all-digit id
 reaches a URL.
 
-The token is read once per call, from `DISCORD_BOT_TOKEN` (how the Claude Desktop extension
-passes it, from its sensitive settings) and then the keychain, and is not held between calls.
-Listing the tools touches neither.
+The token is read once per tool call and held only for that call, from `DISCORD_BOT_TOKEN` (how
+the Claude Desktop extension passes it, from its sensitive settings) and then the keychain, in
+the order `secret_sources` or `DISCORD_SECRET_SOURCES` sets. An empty variable is an error, not
+a fall back to the keychain. Listing the tools touches neither.
 
 **What reaches Claude.** Tool results go to Claude as part of your conversation, and they hold
 other people's words and usernames: everything your bot can see in the channels you ask about.
@@ -56,8 +58,9 @@ server (`launchctl kickstart -k gui/$(id -u)/com.piekstra.discord-mcp-http`); th
 works until the restart, and a token in `$DISCORD_MCP_TOKEN` wins until you change it. To stop
 serving, run `launchctl bootout gui/$(id -u)/com.piekstra.discord-mcp-http` and stop the tunnel.
 `discord auth logout --forget` removes the bot token and the connector token from the keychain;
-a running server keeps its connector token until it stops. Reset the bot's token on Discord's
-developer portal if you think it leaked.
+a running server keeps its connector token until it stops. It does not reach the extension's
+copy of the bot token or an exported `DISCORD_BOT_TOKEN`, so remove the extension or clear that
+setting too. Reset the bot's token on Discord's developer portal if you think it leaked.
 
 ## Supported versions
 

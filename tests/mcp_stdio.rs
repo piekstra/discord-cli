@@ -22,6 +22,7 @@ fn discord(test: &str) -> (Command, PathBuf) {
     let mut c = Command::new(env!("CARGO_BIN_EXE_discord"));
     c.env_remove("DISCORD_MCP_TOKEN")
         .env_remove("DISCORD_BOT_TOKEN")
+        .env_remove("DISCORD_SECRET_SOURCES")
         .env("XDG_CONFIG_HOME", &root)
         .env("HOME", &root)
         .env("USERPROFILE", &root);
@@ -163,6 +164,35 @@ fn asking_for_a_send_is_refused() {
         let refused = call["error"].is_object() || call["result"]["isError"] == true;
         assert!(refused, "{tool}: {call}");
     }
+}
+
+/// The shared rule: an empty value is a failure, never a fall back to a keychain copy the user
+/// did not pick. So this reads no keychain either.
+#[test]
+fn an_empty_token_variable_is_an_error_and_not_the_keychains_token() {
+    let (mut command, _) = discord("empty-token");
+    command.env("DISCORD_BOT_TOKEN", "");
+    let mut s = Server::start(command);
+    s.initialize();
+    let call = s.call(1, "discord_servers", json!({}));
+    assert_eq!(call["result"]["isError"], true, "{call}");
+    assert!(text(&call).starts_with("auth:"), "{call}");
+    assert!(text(&call).contains("DISCORD_BOT_TOKEN"), "{call}");
+}
+
+/// `$DISCORD_SECRET_SOURCES` is the shared override, and a source left out is never read.
+#[test]
+fn the_sources_variable_sets_where_the_token_comes_from() {
+    let (mut command, _) = discord("sources");
+    command
+        .env("DISCORD_BOT_TOKEN", "")
+        .env("DISCORD_SECRET_SOURCES", "nowhere");
+    let mut s = Server::start(command);
+    s.initialize();
+    let call = s.call(1, "discord_servers", json!({}));
+    assert_eq!(call["result"]["isError"], true, "{call}");
+    assert!(text(&call).starts_with("usage:"), "{call}");
+    assert!(text(&call).contains("DISCORD_SECRET_SOURCES"), "{call}");
 }
 
 /// A config that cannot be parsed fails a call that needs it, not the server, and listing

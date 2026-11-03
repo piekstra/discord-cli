@@ -39,8 +39,9 @@ struct Canned {
     guilds: Value,
     channels: Value,
     /// Newest first. A request reads those older than `before`.
-    messages: Vec<Value>,
+    messages: Mutex<Vec<Value>>,
     failure: Option<CliError>,
+    connects: Mutex<u32>,
     asked_channels: Mutex<Vec<String>>,
     asked_messages: Mutex<Vec<(String, Option<String>, u8)>>,
 }
@@ -51,8 +52,9 @@ impl Canned {
             setting: None,
             guilds: fixture_json("guilds.json"),
             channels: fixture_json("channels.json"),
-            messages: fixture_json("messages.json").as_array().unwrap().clone(),
+            messages: Mutex::new(fixture_json("messages.json").as_array().unwrap().clone()),
             failure: None,
+            connects: Mutex::default(),
             asked_channels: Mutex::default(),
             asked_messages: Mutex::default(),
         }
@@ -68,6 +70,13 @@ impl Source for Canned {
         Ok(self.setting.clone())
     }
 
+    fn connect(&self) -> Result<Box<dyn Reader + '_>, CliError> {
+        *self.connects.lock().unwrap() += 1;
+        Ok(Box::new(self))
+    }
+}
+
+impl Reader for &Canned {
     fn guilds(&self) -> Result<Value, CliError> {
         self.fail()?;
         Ok(self.guilds.clone())
@@ -94,10 +103,10 @@ impl Source for Canned {
             before.map(str::to_string),
             limit,
         ));
+        let messages = self.messages.lock().unwrap();
         let id = |m: &Value| m["id"].as_str().unwrap().parse::<u64>().unwrap();
         let bound = before.map(|b| b.parse::<u64>().unwrap());
-        let rows: Vec<Value> = self
-            .messages
+        let rows: Vec<Value> = messages
             .iter()
             .filter(|m| bound.is_none_or(|b| id(m) < b))
             .take(limit as usize)
@@ -167,16 +176,10 @@ struct Untouchable;
 
 impl Source for Untouchable {
     fn guild_setting(&self) -> Result<Option<String>, ToolError> {
-        panic!("listing the tools read the config")
+        panic!("this read the config")
     }
-    fn guilds(&self) -> Result<Value, CliError> {
-        panic!("listing the tools reached Discord")
-    }
-    fn channels(&self, _: &str) -> Result<Value, CliError> {
-        panic!("listing the tools reached Discord")
-    }
-    fn messages(&self, _: &str, _: Option<&str>, _: u8) -> Result<Value, CliError> {
-        panic!("listing the tools reached Discord")
+    fn connect(&self) -> Result<Box<dyn Reader + '_>, CliError> {
+        panic!("this read a token")
     }
 }
 
@@ -383,18 +386,20 @@ fn messages_page_and_bind_the_cursor_to_their_filters() {
 #[test]
 fn a_long_read_walks_back_in_requests_discord_allows() {
     let t = DiscordTools::new(Canned {
-        messages: (0..250u64)
-            .map(|i| message(3000000000000000300 - i))
-            .collect(),
+        messages: Mutex::new(
+            (0..450u64)
+                .map(|i| message(3000000000000000900 - i))
+                .collect(),
+        ),
         ..Canned::new()
     });
     let mut cursor = None;
     let mut seen = Vec::new();
-    for _ in 0..3 {
+    loop {
         let out = fits(
             &t,
             MESSAGES_TOOL,
-            json!({"channel": GENERAL, "limit": 100, "cursor": cursor}),
+            json!({"channel": GENERAL, "limit": 150, "cursor": cursor}),
         );
         seen.extend(
             out["items"]
@@ -404,44 +409,130 @@ fn a_long_read_walks_back_in_requests_discord_allows() {
                 .map(|m| m["id"].as_str().unwrap().parse::<u64>().unwrap()),
         );
         cursor = out["next_cursor"].as_str().map(str::to_string);
+        if cursor.is_none() {
+            break;
+        }
     }
-    assert_eq!(seen.len(), 250);
+    assert_eq!(seen.len(), 450);
     assert!(
         seen.windows(2).all(|w| w[0] > w[1]),
         "newest first, once each"
     );
-    assert!(cursor.is_none());
     let asked = t.source.asked_messages.lock().unwrap();
     assert!(asked.iter().all(|(_, _, limit)| *limit <= 100), "{asked:?}");
 }
 
+/// A page costs the same however deep it is, since its cursor holds where to read on.
 #[test]
-fn a_read_past_the_ceiling_is_refused_before_asking() {
+fn a_deep_page_reads_only_its_own_messages() {
     let t = DiscordTools::new(Canned {
-        messages: (0..1_100u64)
-            .map(|i| message(3000000000000002000 - i))
-            .collect(),
+        messages: Mutex::new(
+            (0..2_000u64)
+                .map(|i| message(3000000000000003000 - i))
+                .collect(),
+        ),
         ..Canned::new()
     });
     let mut cursor = None;
-    let mut pages = 0;
-    let text = loop {
-        let result = call(
+    for _ in 0..30 {
+        let out = fits(
             &t,
             MESSAGES_TOOL,
-            json!({"channel": GENERAL, "limit": 100, "cursor": cursor}),
+            json!({"channel": GENERAL, "limit": 50, "cursor": cursor}),
         );
-        if result.is_error() {
-            break result.text().to_string();
-        }
-        pages += 1;
-        cursor = assert_fits(&t, MESSAGES_TOOL, &result)["next_cursor"]
-            .as_str()
-            .map(str::to_string);
+        assert_eq!(out["returned"], 50);
+        cursor = out["next_cursor"].as_str().map(str::to_string);
+    }
+    assert_eq!(t.source.asked_messages.lock().unwrap().len(), 30);
+    assert_eq!(*t.source.connects.lock().unwrap(), 30);
+}
+
+/// A moderator can delete what a page already returned.
+#[test]
+fn a_message_deleted_between_pages_skips_nothing() {
+    let t = DiscordTools::new(Canned {
+        messages: Mutex::new(
+            (0..6u64)
+                .map(|i| message(3000000000000000900 - i))
+                .collect(),
+        ),
+        ..Canned::new()
+    });
+    let first = fits(&t, MESSAGES_TOOL, json!({"channel": GENERAL, "limit": 3}));
+    let cursor = first["next_cursor"].as_str().unwrap().to_string();
+    t.source
+        .messages
+        .lock()
+        .unwrap()
+        .retain(|m| m["id"] != "3000000000000000899");
+
+    let second = fits(
+        &t,
+        MESSAGES_TOOL,
+        json!({"channel": GENERAL, "limit": 3, "cursor": cursor}),
+    );
+    let ids: Vec<&str> = second["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|m| m["id"].as_str().unwrap())
+        .collect();
+    assert_eq!(
+        ids,
+        [
+            "3000000000000000897",
+            "3000000000000000896",
+            "3000000000000000895"
+        ]
+    );
+}
+
+/// A cursor comes back from the client, and its key reaches a URL.
+#[test]
+fn a_cursor_holding_anything_but_an_id_is_refused_before_reading() {
+    let filter = MessagesFilter {
+        channel: GENERAL,
+        guild: None,
+        since: None,
+        until: None,
     };
+    let forged = ResumeRequest::new(&ListArgs::default(), &filter)
+        .unwrap()
+        .page(
+            Vec::<(String, u32)>::new(),
+            Some("1&after=2".to_string()),
+            "since",
+        )
+        .unwrap()
+        .info
+        .next_cursor;
+    let text = error_text(&call(
+        &DiscordTools::new(Untouchable),
+        MESSAGES_TOOL,
+        json!({"channel": GENERAL, "cursor": forged}),
+    ));
     assert!(text.starts_with("usage:"), "{text}");
-    assert!(text.contains("until"), "{text}");
-    assert_eq!(pages, 9);
+}
+
+/// The token is one keychain read, and one prompt, however many requests a call makes.
+#[test]
+fn a_call_connects_once_however_many_requests_it_makes() {
+    let t = DiscordTools::new(Canned {
+        messages: Mutex::new(
+            (0..450u64)
+                .map(|i| message(3000000000000000900 - i))
+                .collect(),
+        ),
+        ..Canned::new()
+    });
+    let out = fits(
+        &t,
+        MESSAGES_TOOL,
+        json!({"channel": "general", "guild": "another example", "limit": 200}),
+    );
+    assert_eq!(out["returned"], 200);
+    assert!(t.source.asked_messages.lock().unwrap().len() > 1);
+    assert_eq!(*t.source.connects.lock().unwrap(), 1);
 }
 
 #[test]
@@ -474,7 +565,7 @@ fn since_stops_the_walk_and_until_starts_it_further_back() {
     let middle = id_on_day("2020-01-02", 5);
     let oldest = id_on_day("2020-01-01", 5);
     let t = DiscordTools::new(Canned {
-        messages: vec![message(newest), message(middle), message(oldest)],
+        messages: Mutex::new(vec![message(newest), message(middle), message(oldest)]),
         ..Canned::new()
     });
     let out = fits(
@@ -528,9 +619,10 @@ fn bad_dates_are_usage_errors_before_any_read() {
 #[test]
 fn a_token_discord_refuses_says_to_sign_in_and_a_403_does_not() {
     let t = DiscordTools::new(Canned {
-        failure: Some(CliError::Auth(
-            "Discord rejected the bot token (HTTP 401) — run `discord auth login` again".into(),
-        )),
+        failure: Some(
+            CliError::Auth("Discord rejected the bot token (HTTP 401)".into())
+                .because(Reason::CredentialRefused),
+        ),
         ..Canned::new()
     });
     let text = error_text(&call(&t, MESSAGES_TOOL, json!({"channel": GENERAL})));
@@ -538,9 +630,10 @@ fn a_token_discord_refuses_says_to_sign_in_and_a_403_does_not() {
     assert!(text.contains("discord auth login"), "{text}");
 
     let t = DiscordTools::new(Canned {
-        failure: Some(CliError::Auth(format!(
-            "{NO_ACCESS} (HTTP 403: Missing Access (code 50001))"
-        ))),
+        failure: Some(
+            CliError::Auth("The bot lacks access (HTTP 403: Missing Access (code 50001))".into())
+                .because(Reason::Forbidden),
+        ),
         ..Canned::new()
     });
     let text = error_text(&call(&t, MESSAGES_TOOL, json!({"channel": GENERAL})));
@@ -616,12 +709,57 @@ fn stub() -> (String, Arc<Mutex<Vec<String>>>) {
     (url, seen)
 }
 
-fn live(base: String, dir: &std::path::Path) -> DiscordTools<Live> {
+fn live_from(base: String, dir: &std::path::Path, source: SourceKind) -> DiscordTools<Live> {
     let store = ConfigStore::new("discord").with_override(Some(dir.join("config.json")));
     DiscordTools::new(Live {
         store,
-        connect: Box::new(move || Discord::at(&base, Secret::new("dummy-bot-token"))),
+        connect: Box::new(move |_| {
+            Ok((Discord::at(&base, Secret::new("dummy-bot-token"))?, source))
+        }),
     })
+}
+
+fn live(base: String, dir: &std::path::Path) -> DiscordTools<Live> {
+    live_from(base, dir, SourceKind::Keychain)
+}
+
+/// A server that refuses every token.
+fn refusing_stub() -> String {
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let url = format!("http://{}", listener.local_addr().unwrap());
+    std::thread::spawn(move || {
+        for conn in listener.incoming() {
+            let Ok(mut conn) = conn else { return };
+            let mut buf = [0u8; 8192];
+            let _ = conn.read(&mut buf);
+            let body = r#"{"message": "401: Unauthorized", "code": 0}"#;
+            let reply = format!(
+                "HTTP/1.1 401 Unauthorized\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\
+                 Connection: close\r\n\r\n{body}",
+                body.len()
+            );
+            let _ = conn.write_all(reply.as_bytes());
+        }
+    });
+    url
+}
+
+/// Signing in again changes the keychain, and the variable outranks it.
+#[test]
+fn a_refused_token_sends_the_user_to_where_that_token_came_from() {
+    let dir = tempfile::tempdir().unwrap();
+    let t = live_from(refusing_stub(), dir.path(), SourceKind::Env);
+    let text = error_text(&call(&t, SERVERS_TOOL, json!({})));
+    assert!(text.starts_with("auth:"), "{text}");
+    assert!(text.contains(TOKEN_ENV), "{text}");
+    assert!(text.contains("settings"), "{text}");
+    assert!(text.contains("will not help"), "{text}");
+
+    let t = live_from(refusing_stub(), dir.path(), SourceKind::Keychain);
+    let text = error_text(&call(&t, SERVERS_TOOL, json!({})));
+    assert!(text.starts_with("auth:"), "{text}");
+    assert!(text.contains("discord auth login"), "{text}");
+    assert!(!text.contains(TOKEN_ENV), "{text}");
 }
 
 #[test]

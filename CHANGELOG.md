@@ -14,4 +14,4 @@ All notable changes to `discord` are documented here. Newest first. The project 
   tarball, and publish only once every asset is there.
 - `self-update` says to restart a running `discord mcp --http` and to install the new `.mcpb`.
 - The config follows `USERPROFILE` on Windows.
-- cli-common v0.26.0, up from v0.24.0.
+- cli-common v0.28.0, up from v0.24.0.

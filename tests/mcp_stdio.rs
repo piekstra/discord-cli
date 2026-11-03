@@ -191,8 +191,42 @@ fn the_sources_variable_sets_where_the_token_comes_from() {
     s.initialize();
     let call = s.call(1, "discord_servers", json!({}));
     assert_eq!(call["result"]["isError"], true, "{call}");
-    assert!(text(&call).starts_with("usage:"), "{call}");
+    assert!(text(&call).starts_with("auth:"), "{call}");
     assert!(text(&call).contains("DISCORD_SECRET_SOURCES"), "{call}");
+    assert!(text(&call).contains("will not help"), "{call}");
+}
+
+/// Signing in cannot fix an order that leaves out the keychain, so it does not say to.
+#[test]
+fn an_order_leaving_out_the_keychain_says_how_to_change_it() {
+    let (mut command, _) = discord("env-only");
+    command.env("DISCORD_SECRET_SOURCES", "env");
+    let mut s = Server::start(command);
+    s.initialize();
+    let call = s.call(1, "discord_servers", json!({}));
+    assert_eq!(call["result"]["isError"], true, "{call}");
+    assert!(text(&call).starts_with("auth:"), "{call}");
+    assert!(
+        text(&call).contains("discord config unset secret_sources"),
+        "{call}"
+    );
+    assert!(text(&call).contains("will not help"), "{call}");
+}
+
+/// The bot token has no 1Password reference, so `op` in the order is refused rather than ignored.
+#[test]
+fn an_order_naming_op_is_refused() {
+    let (mut command, _) = discord("op-only");
+    command.env("DISCORD_SECRET_SOURCES", "op");
+    let mut s = Server::start(command);
+    s.initialize();
+    let call = s.call(1, "discord_servers", json!({}));
+    assert_eq!(call["result"]["isError"], true, "{call}");
+    assert!(text(&call).starts_with("auth:"), "{call}");
+    assert!(
+        text(&call).contains("`op` cannot be in the order"),
+        "{call}"
+    );
 }
 
 /// A config that cannot be parsed fails a call that needs it, not the server, and listing

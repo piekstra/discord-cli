@@ -40,7 +40,8 @@ holds the definitions and the requests to that.
   `piekstra.discord`, account `bot-token`). `discord mcp` reads it through
   `SecretResolver`, from `$DISCORD_BOT_TOKEN` (how the Claude Desktop extension
   passes it) and then the keychain, in the order `secret_sources` or
-  `$DISCORD_SECRET_SOURCES` sets. It gets to the keychain
+  `$DISCORD_SECRET_SOURCES` sets. An order naming `op` is refused, since the token has no
+  1Password reference. It gets to the keychain
   via `auth login` / `auth set-credential`, which ingest from `--stdin`,
   `--from-env <VAR>`, or a no-echo prompt — **never a `--token` flag** (leaks
   into `ps`, history, transcripts). Wrap secrets in `pk_cli_secrets::Secret`;

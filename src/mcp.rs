@@ -31,7 +31,7 @@ use crate::client::Discord;
 use crate::commands::auth::normalize_token;
 use crate::commands::channels::type_name;
 use crate::commands::{find_by_name, find_channel_by_name, is_snowflake, ACCOUNT};
-use crate::config::Config;
+use crate::config::{usable_order, Config};
 
 pub const SERVERS_TOOL: &str = "discord_servers";
 pub const CHANNELS_TOOL: &str = "discord_channels";
@@ -47,6 +47,8 @@ const BROKEN_CONFIG: &str = "the discord config file cannot be read; ask the use
 
 /// Discord refused a token from the environment, which `discord auth login` cannot replace.
 const ENV_TOKEN_REFUSED: Reason = Reason::Provider("env-token-refused");
+/// The order of token sources is what stands in the way, so signing in would not help.
+const SOURCES_IN_THE_WAY: Reason = Reason::Provider("secret-sources-in-the-way");
 
 /// The most a request for messages returns.
 const MESSAGES_PER_REQUEST: usize = 100;
@@ -98,15 +100,20 @@ impl Live {
 
 /// Where to look for the token: `$DISCORD_SECRET_SOURCES`, the setting, or the shared default.
 fn source_order(store: &ConfigStore) -> Result<SourceOrder, CliError> {
+    let refuse = |why: String| CliError::Auth(why).because(SOURCES_IN_THE_WAY);
     if let Ok(text) = std::env::var(SOURCES_ENV) {
         return text
             .parse()
-            .map_err(|e| CliError::Usage(format!("${SOURCES_ENV}: {e}")));
+            .and_then(usable_order)
+            .map_err(|e| refuse(format!("${SOURCES_ENV}: {e}")));
     }
     let config: Config = store
         .load()
         .map_err(|_| CliError::Other(BROKEN_CONFIG.into()))?;
-    Ok(config.secret_sources.unwrap_or_default())
+    match config.secret_sources {
+        Some(order) => usable_order(order).map_err(|e| refuse(format!("secret_sources: {e}"))),
+        None => Ok(SourceOrder::default()),
+    }
 }
 
 /// The token for one call, and where it came from.
@@ -114,6 +121,8 @@ fn bot_token(
     creds: &CredentialStore,
     order: SourceOrder,
 ) -> Result<(Secret, SourceKind), CliError> {
+    let keychain_read = order.sources().contains(&SourceKind::Keychain);
+    let listed = order.to_string();
     let resolved = SecretResolver::new(creds)
         .order(order)
         .resolve(&SecretSpec::new(ACCOUNT).env(TOKEN_ENV))
@@ -123,7 +132,14 @@ fn bot_token(
             other => other,
         })?
         .ok_or_else(|| {
-            CliError::Auth("no bot token is stored".into()).because(Reason::NoCredential)
+            if keychain_read {
+                CliError::Auth("no bot token is stored".into()).because(Reason::NoCredential)
+            } else {
+                CliError::Auth(format!(
+                    "no bot token in the sources set to be read: {listed}"
+                ))
+                .because(SOURCES_IN_THE_WAY)
+            }
         })?;
     Ok((normalize_token(&resolved.secret)?, resolved.source))
 }
@@ -206,6 +222,13 @@ fn tool_err(e: CliError) -> ToolError {
             "`discord auth login` will not help, since ${TOKEN_ENV} outranks the keychain. Ask the \
              user to update the token in the Claude Desktop extension's settings, or in that \
              variable"
+        ));
+    }
+    if reason == Some(SOURCES_IN_THE_WAY) {
+        return ToolError::auth(e.message()).with_fix(format!(
+            "`discord auth login` will not help, since the token is not being read from there. Ask \
+             the user to run `discord config unset secret_sources`, or to correct or unset \
+             ${SOURCES_ENV}"
         ));
     }
     match e {

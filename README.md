@@ -168,6 +168,10 @@ Either way, `discord auth login` first: the server reads the token from the keyc
 for your bot token, keeps it in Claude Desktop's settings, and passes it to the server as
 `$DISCORD_BOT_TOKEN`.
 
+The server reads `$DISCORD_BOT_TOKEN` and then the keychain. `$DISCORD_SECRET_SOURCES`, or the
+`secret_sources` setting, changes that order (`env`, `keychain`, or both). A token kept nowhere it
+says to read is an error that says so.
+
 Any other MCP client that launches a local server can run `discord mcp`.
 
 **Claude on the web and mobile.** claude.ai reaches tools through a remote connector. `discord`

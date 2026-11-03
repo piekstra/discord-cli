@@ -1,7 +1,7 @@
 //! Non-secret preferences at `~/.config/discord/config.json`. The bot token
 //! never lands here — it lives in the OS keychain (see `pk-cli-secrets`).
 
-use pk_cli_secrets::SourceOrder;
+use pk_cli_secrets::{SourceKind, SourceOrder};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Default, Serialize, Deserialize)]
@@ -23,3 +23,15 @@ pub struct Config {
 }
 
 pub const KEYS: &[&str] = &["guild", "username", "op-item", "secret_sources"];
+
+/// An order this CLI can honor. The bot token has no 1Password reference (`op-item` is the
+/// portal's sign-in), so an order naming `op` would read nothing there and say nothing about it.
+pub fn usable_order(order: SourceOrder) -> Result<SourceOrder, String> {
+    if order.sources().contains(&SourceKind::Op) {
+        return Err(
+            "the bot token is read from `env` and `keychain` only, so `op` cannot be in the order"
+                .into(),
+        );
+    }
+    Ok(order)
+}

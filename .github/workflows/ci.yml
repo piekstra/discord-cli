@@ -24,9 +24,14 @@ jobs:
           components: rustfmt, clippy
       - uses: Swatinem/rust-cache@v2
       - run: cargo fmt --all -- --check
-      - run: cargo clippy --all-targets -- -D warnings
-      - run: cargo test --all
-      - run: cargo build --release
+      - run: cargo clippy --all-targets --locked -- -D warnings
+      - run: cargo test --all --locked
+      - run: cargo build --release --locked
+      - name: smoke
+        run: |
+          ./target/release/discord --version
+          ./target/release/discord info > /dev/null
+          ./target/release/discord mcp --list-tools > /dev/null
 
   security:
     name: audit / deny / secrets

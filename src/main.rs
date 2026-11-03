@@ -5,6 +5,7 @@ mod cli;
 mod client;
 mod commands;
 mod config;
+mod mcp;
 mod portal;
 
 use clap::Parser;
@@ -34,13 +35,22 @@ fn run(cli: &Cli) -> Result<(), CliError> {
         Command::App(cmd) => commands::app::run(&ctx, cmd),
         Command::Config(cmd) => commands::config::run(&ctx, cmd),
         Command::Api(args) => commands::api::run(&ctx, args),
+        Command::Mcp(args) => {
+            let tools = mcp::DiscordTools::new(mcp::Live::new(ctx.store, ctx.creds));
+            pk_cli_mcp::run(args, tools)
+        }
         Command::SelfUpdate(args) => Updater {
             repo: REPO.into(),
             binary: BIN.into(),
             target: env!("BUILD_TARGET").into(),
             current: env!("CARGO_PKG_VERSION").into(),
         }
-        .run(args, cli.common.json, cli.common.quiet),
+        .run_noting(
+            args,
+            cli.common.json,
+            cli.common.quiet,
+            &pk_cli_mcp::restart_note(BIN),
+        ),
         Command::Completions { shell } => {
             use clap::CommandFactory;
             clap_complete::generate(*shell, &mut Cli::command(), BIN, &mut std::io::stdout());

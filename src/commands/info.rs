@@ -17,7 +17,7 @@ pub fn run() -> Result<(), CliError> {
             login_hint: Some(format!("{BIN} auth login")),
         },
         &[
-            "me", "guilds", "channels", "messages", "send", "delete", "app", "api",
+            "me", "guilds", "channels", "messages", "send", "delete", "app", "api", "mcp",
         ],
     );
     output::json(&serde_json::to_value(&info).unwrap_or_default());

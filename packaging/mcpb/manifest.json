@@ -1,0 +1,90 @@
+{
+  "manifest_version": "0.3",
+  "name": "discord",
+  "display_name": "Discord, read only (discord)",
+  "version": "0.2.0",
+  "description": "Read the servers, channels and messages your own Discord bot can see, through the open-source discord CLI. It cannot send anything.",
+  "long_description": "Ask Claude what was said in a channel and when. Three read-only tools: discord_servers, discord_channels and discord_messages. They read what your own bot can see, and no tool can send, edit, delete or moderate anything, because a model reads text here that anyone in a channel wrote. You need a bot of your own, invited to the server, with the View Channel and Read Message History permissions and Discord's Message Content intent: without that intent most messages come back empty. Your bot token is kept in Claude Desktop's settings and sent only to Discord's API. What the tools return goes to Claude as part of your conversation, including other people's messages, so read only servers where that is acceptable. Attachment links are signed and stay out of every result. Unofficial; not affiliated with or endorsed by Discord.",
+  "author": {
+    "name": "piekstra",
+    "url": "https://github.com/piekstra"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/piekstra/discord-cli"
+  },
+  "homepage": "https://github.com/piekstra/discord-cli",
+  "documentation": "https://github.com/piekstra/discord-cli#use-with-claude",
+  "support": "https://github.com/piekstra/discord-cli/issues",
+  "license": "MIT OR Apache-2.0",
+  "keywords": [
+    "discord",
+    "chat",
+    "messages",
+    "read-only"
+  ],
+  "user_config": {
+    "bot_token": {
+      "type": "string",
+      "title": "Discord bot token",
+      "description": "From the Discord Developer Portal: your application, Bot, Reset Token.",
+      "sensitive": true,
+      "required": true
+    }
+  },
+  "server": {
+    "type": "binary",
+    "entry_point": "server/discord",
+    "mcp_config": {
+      "command": "${__dirname}/server/discord",
+      "args": [
+        "mcp"
+      ],
+      "env": {
+        "DISCORD_BOT_TOKEN": "${user_config.bot_token}"
+      },
+      "platform_overrides": {
+        "win32": {
+          "command": "${__dirname}/server/discord.exe",
+          "args": [
+            "mcp"
+          ],
+          "env": {
+            "DISCORD_BOT_TOKEN": "${user_config.bot_token}"
+          }
+        },
+        "linux": {
+          "command": "${__dirname}/server/linux/discord",
+          "args": [
+            "mcp"
+          ],
+          "env": {
+            "DISCORD_BOT_TOKEN": "${user_config.bot_token}"
+          }
+        }
+      }
+    }
+  },
+  "tools": [
+    {
+      "name": "discord_servers",
+      "description": "The servers the bot has joined."
+    },
+    {
+      "name": "discord_channels",
+      "description": "One server's channels."
+    },
+    {
+      "name": "discord_messages",
+      "description": "One channel's messages, newest first, by date if you like."
+    }
+  ],
+  "tools_generated": false,
+  "compatibility": {
+    "platforms": [
+      "darwin",
+      "win32",
+      "linux"
+    ]
+  }
+}

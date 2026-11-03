@@ -130,6 +130,76 @@ discord app intents enable message-content
 discord app invite-url             # open this link to invite the bot
 ```
 
+## Use with Claude
+
+`discord mcp` serves three read-only tools to Claude over MCP. **No tool sends, edits, deletes
+or moderates anything.** A model reads text here that anyone in a channel wrote, so a send tool
+would be steerable by that text. Sending stays on the command line.
+
+| Tool | Answers |
+|---|---|
+| `discord_servers` | Which servers the bot has joined |
+| `discord_channels` | One server's channels |
+| `discord_messages` | One channel's messages, newest first, with `since` and `until` as UTC dates |
+
+The tools read what your bot can see, so it needs the View Channel and Read Message History
+permissions there and the Message Content intent (`discord app intents enable
+message-content`). Without the intent most messages come back empty. What the tools return goes
+to Claude, including other people's messages ([`SECURITY.md`](SECURITY.md)).
+
+**Claude Code.** Add the `discord-cli` plugin from the
+[piekstra plugin marketplace](https://github.com/piekstra/claude-plugins):
+
+```console
+$ claude plugin marketplace add piekstra/claude-plugins
+$ claude plugin install discord-cli@piekstra-plugins
+```
+
+or register the server yourself:
+
+```console
+$ claude mcp add discord -- discord mcp
+```
+
+Either way, `discord auth login` first: the server reads the token from the keychain.
+
+**Claude Desktop.** Download `discord-<version>.mcpb` from the
+[latest release](https://github.com/piekstra/discord-cli/releases/latest) and open it. It asks
+for your bot token, keeps it in Claude Desktop's settings, and passes it to the server as
+`$DISCORD_BOT_TOKEN`.
+
+Any other MCP client that launches a local server can run `discord mcp`.
+
+**Claude on the web and mobile.** claude.ai reaches tools through a remote connector. `discord`
+keeps your bot token on your computer, so it serves the same tools from your computer to a
+connector you deploy into your own Cloudflare account:
+
+```console
+$ discord mcp --new-token            # once: a bearer token, saved in the keychain and printed for the Worker
+$ discord mcp --http --port 8772     # serve on 127.0.0.1 only
+```
+
+`--http` takes the token from `$DISCORD_MCP_TOKEN` if it is set, and otherwise from the
+keychain. `discord mcp --new-token --overwrite` replaces a saved one.
+The connector, [cli-common's `connector/`](https://github.com/piekstra/cli-common/tree/main/connector#tools-from-your-computer-home-modules),
+reaches that port through a Cloudflare Tunnel in your account; its README walks through the
+tunnel, the VPC service, a launchd agent that keeps the server running, and the
+`HOME_DISCORD_TOKEN` secret, with the threat model. `--http` binds 127.0.0.1 only, refuses to
+start without the token, refuses any request whose `Host` is not loopback or that carries an
+`Origin`, and serves only read-only tools, which is all `discord` has. Tool results pass through
+Cloudflare and reach Claude. While the computer sleeps, the tools answer that it is offline.
+`discord auth logout --forget` removes the bot token and this bearer token.
+
+After `discord self-update`, restart the server: a running one keeps the old code, and its
+launchd agent restarts it only when it exits. Its start line names the version.
+
+```console
+$ launchctl kickstart -k gui/$(id -u)/com.piekstra.discord-mcp-http
+```
+
+`self-update` does not reach a Claude Desktop extension, which runs its own copy. Install
+the new release's `.mcpb` too.
+
 ## Agent / script contract
 
 Every command takes `--json` and emits exactly one DTO on stdout
@@ -158,8 +228,12 @@ $ discord --json auth status
 
 - The bot token lives **only in the OS keychain** (service
   `piekstra.discord`), written via stdin, `--from-env <VAR>`, or an
-  interactive no-echo prompt — never a `--token` flag, never a file.
-- Non-secret preferences live at `~/.config/discord/config.json`.
+  interactive no-echo prompt — never a `--token` flag, never a file. The
+  exception is the Claude Desktop extension, which keeps it in Claude Desktop's
+  settings and passes it to `discord mcp` as `$DISCORD_BOT_TOKEN`.
+- Non-secret preferences live at
+  `${XDG_CONFIG_HOME:-~/.config}/discord/config.json`; on Windows `~` is
+  `%USERPROFILE%`.
 - Requests go directly to `discord.com` over TLS (rustls); there is no
   telemetry and no third-party service.
 - Portal commands capture your user-session header in-process only — it is
@@ -167,6 +241,8 @@ $ discord --json auth status
   browser profile at `~/.cache/discord-cli/portal/profile` (a normal
   logged-in browser, like Chrome's own profile); `discord app logout`
   deletes it.
+
+See [`SECURITY.md`](SECURITY.md).
 
 ## Development
 

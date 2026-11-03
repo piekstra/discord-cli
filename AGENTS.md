@@ -14,6 +14,11 @@ The endpoints used and Discord-specific gotchas (privileged intents, rate
 limits, permissions) are in [`docs/api.md`](docs/api.md) — read it before
 touching `src/client.rs`.
 
+`discord mcp` (`src/mcp.rs`) serves three read-only tools. **Never add a tool that
+sends, edits, deletes or moderates**: a model reads text there that anyone in a
+channel wrote, so such a tool would be steerable by that text. `src/mcp/tests.rs`
+holds the definitions and the requests to that.
+
 ## Local map
 
 | Path | Responsibility |
@@ -91,7 +96,7 @@ global `--json`, canonical DTOs (`auth-status/v1`, `self-update/v1`,
 
 - **Don't fork shared behavior.** Error/exit-code handling, output rendering,
   keychain secrets, config storage, and self-update come from the `pk-cli-*`
-  crates (tag-pinned git deps on cli-common). If you need a change there — or
+  crates (tag-pinned git deps on cli-common, currently **v0.26.0**). If you need a change there — or
   you're writing anything reusable across the family CLIs — add it to
   cli-common, cut a tag, and bump the pin here. Never copy shared code into
   this repo.

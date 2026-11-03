@@ -26,6 +26,10 @@ pub enum Command {
     /// Bot-token management and status.
     #[command(subcommand)]
     Auth(AuthCmd),
+    /// Serve read-only tools to Claude and other MCP clients over stdio, or
+    /// with --http on 127.0.0.1 for your own connector's tunnel. No tool can send,
+    /// edit or delete anything.
+    Mcp(pk_cli_mcp::McpArgs),
     /// Show the authenticated bot user (user/v1).
     Me,
     /// List the guilds (servers) the bot has joined (guilds/v1).
@@ -63,7 +67,7 @@ pub enum AuthCmd {
     Login(LoginArgs),
     /// Report credential state (auth-status/v1).
     Status,
-    /// Remove the stored bot token (with --forget).
+    /// Remove the stored bot token and the connector token of `mcp --http` (with --forget).
     Logout(LogoutArgs),
     /// Raw keychain write for rotation / headless setup.
     SetCredential(SetCredentialArgs),

@@ -10,10 +10,12 @@ use pk_cli_core::CliError;
 use pk_cli_secrets::Secret;
 use serde_json::Value;
 
-use crate::cli::AuthCmd;
+use crate::cli::{AuthCmd, BIN};
 use crate::client::Discord;
 use crate::commands::{Ctx, ACCOUNT};
 use crate::config::Config;
+
+const BIN_UPPER: &str = "DISCORD";
 
 pub fn run(ctx: &Ctx, cmd: &AuthCmd) -> Result<(), CliError> {
     match cmd {
@@ -73,22 +75,47 @@ fn status(ctx: &Ctx) -> Result<(), CliError> {
 fn logout(ctx: &Ctx, args: &LogoutArgs) -> Result<(), CliError> {
     if args.forget {
         let removed = ctx.creds.delete(ACCOUNT)?;
+        // Nothing records whether `mcp --new-token` ran, so this is ungated: a keyring that is
+        // not running, or a prompt declined, must not leave the config behind it.
+        let connector = ctx.creds.delete(pk_cli_mcp::HTTP_TOKEN_ACCOUNT);
         ctx.store.clear()?;
+        connector.map_err(connector_token_stays)?;
         if !ctx.cli.common.quiet {
             eprintln!(
                 "{}",
                 if removed {
-                    "bot token removed from the keychain"
+                    "bot token and connector token removed from the keychain"
                 } else {
-                    "no bot token was stored"
+                    "no bot token was stored; any connector token was removed"
                 }
             );
+            eprintln!("{}", forget_note());
         }
     } else if !ctx.cli.common.quiet {
         // Bot tokens have no server-side session to end.
-        eprintln!("nothing to do — pass --forget to remove the stored bot token");
+        eprintln!(
+            "nothing to do — pass --forget to remove the stored bot token and connector token"
+        );
     }
     Ok(())
+}
+
+/// What a failed token delete still leaves true. Nothing, if `mcp --new-token` never ran here.
+fn connector_token_stays(failure: CliError) -> CliError {
+    CliError::Keychain(format!(
+        "the bot token and config are cleared, but the connector token of `{BIN} mcp --http` could \
+         not be removed, if there is one: {failure}"
+    ))
+}
+
+/// What `--forget` cannot reach. A running server keeps the token it started with, and a
+/// variable belongs to whoever set it.
+fn forget_note() -> String {
+    format!(
+        "a running `{BIN} mcp --http` keeps its connector token until it stops; \
+         ${BIN_UPPER}_MCP_TOKEN, if set, still works; revoking the bot itself is on Discord's \
+         developer portal"
+    )
 }
 
 fn set_credential(ctx: &Ctx, args: &SetCredentialArgs) -> Result<(), CliError> {
@@ -106,7 +133,7 @@ fn set_credential(ctx: &Ctx, args: &SetCredentialArgs) -> Result<(), CliError> {
 }
 
 /// Trim whitespace and a pasted `Bot ` prefix; reject an empty result.
-fn normalize_token(raw: &Secret) -> Result<Secret, CliError> {
+pub(crate) fn normalize_token(raw: &Secret) -> Result<Secret, CliError> {
     let trimmed = raw.expose().trim();
     let trimmed = trimmed.strip_prefix("Bot ").unwrap_or(trimmed).trim();
     if trimmed.is_empty() {

@@ -521,7 +521,7 @@ dependencies = [
 
 [[package]]
 name = "discord-cli"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "clap",
  "clap_complete",
@@ -1304,8 +1304,8 @@ dependencies = [
 
 [[package]]
 name = "pk-cli-auth"
-version = "0.1.2"
-source = "git+https://github.com/piekstra/cli-common?tag=v0.1.2#d1c801b116c7518d62b8aa6c19f18d26bccf3a98"
+version = "0.15.1"
+source = "git+https://github.com/piekstra/cli-common?tag=v0.15.1#1873d2a744dd026599d89f0fa46820b2fa77510f"
 dependencies = [
  "clap",
  "pk-cli-core",
@@ -1316,8 +1316,8 @@ dependencies = [
 
 [[package]]
 name = "pk-cli-config"
-version = "0.1.2"
-source = "git+https://github.com/piekstra/cli-common?tag=v0.1.2#d1c801b116c7518d62b8aa6c19f18d26bccf3a98"
+version = "0.15.1"
+source = "git+https://github.com/piekstra/cli-common?tag=v0.15.1#1873d2a744dd026599d89f0fa46820b2fa77510f"
 dependencies = [
  "pk-cli-core",
  "serde",
@@ -1326,10 +1326,11 @@ dependencies = [
 
 [[package]]
 name = "pk-cli-core"
-version = "0.1.2"
-source = "git+https://github.com/piekstra/cli-common?tag=v0.1.2#d1c801b116c7518d62b8aa6c19f18d26bccf3a98"
+version = "0.15.1"
+source = "git+https://github.com/piekstra/cli-common?tag=v0.15.1#1873d2a744dd026599d89f0fa46820b2fa77510f"
 dependencies = [
  "clap",
+ "libc",
  "reqwest",
  "serde",
  "serde_json",
@@ -1337,8 +1338,8 @@ dependencies = [
 
 [[package]]
 name = "pk-cli-http"
-version = "0.1.2"
-source = "git+https://github.com/piekstra/cli-common?tag=v0.1.2#d1c801b116c7518d62b8aa6c19f18d26bccf3a98"
+version = "0.15.1"
+source = "git+https://github.com/piekstra/cli-common?tag=v0.15.1#1873d2a744dd026599d89f0fa46820b2fa77510f"
 dependencies = [
  "clap",
  "pk-cli-core",
@@ -1348,20 +1349,22 @@ dependencies = [
 
 [[package]]
 name = "pk-cli-secrets"
-version = "0.1.2"
-source = "git+https://github.com/piekstra/cli-common?tag=v0.1.2#d1c801b116c7518d62b8aa6c19f18d26bccf3a98"
+version = "0.15.1"
+source = "git+https://github.com/piekstra/cli-common?tag=v0.15.1#1873d2a744dd026599d89f0fa46820b2fa77510f"
 dependencies = [
  "clap",
  "keyring",
  "pk-cli-core",
  "rpassword",
+ "serde",
+ "serde_json",
  "zeroize",
 ]
 
 [[package]]
 name = "pk-cli-selfupdate"
-version = "0.1.2"
-source = "git+https://github.com/piekstra/cli-common?tag=v0.1.2#d1c801b116c7518d62b8aa6c19f18d26bccf3a98"
+version = "0.15.1"
+source = "git+https://github.com/piekstra/cli-common?tag=v0.15.1#1873d2a744dd026599d89f0fa46820b2fa77510f"
 dependencies = [
  "clap",
  "flate2",
@@ -1822,6 +1825,7 @@ version = "1.0.150"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e8014e44b4736ed0538adeecded0fce2a272f22dc9578a7eb6b2d9993c74cfb9"
 dependencies = [
+ "indexmap",
  "itoa",
  "memchr",
  "serde",

@@ -43,3 +43,16 @@ fn no_color_in_the_environment_never_fails_a_command() {
         );
     }
 }
+
+#[test]
+fn api_refuses_a_plain_http_url_before_the_keychain() {
+    let home = tmp();
+    let out = discord(&home)
+        .args(["api", "GET", "http://discord.invalid/api/v10/users/@me"])
+        .output()
+        .unwrap();
+    assert_eq!(out.status.code(), Some(2));
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(stderr.contains("only https is allowed"), "{stderr}");
+    assert!(!stderr.contains("users/@me"), "{stderr}");
+}

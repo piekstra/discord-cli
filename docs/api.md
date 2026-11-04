@@ -12,6 +12,7 @@ agent. Official docs: <https://discord.com/developers/docs>.
 | `guilds` | `GET /users/@me/guilds` (first page, ≤ 200 guilds) |
 | `channels` | `GET /guilds/{guild.id}/channels` |
 | `messages` | `GET /channels/{channel.id}/messages?limit=&before=&after=` |
+| `mcp` tools | `GET /users/@me/guilds?limit=200&after=`, `GET /guilds/{guild.id}/channels`, and `GET /channels/{channel.id}/messages?limit=&before=` only |
 | `send` | `POST /channels/{channel.id}/messages` (`content`, optional `message_reference.message_id`) |
 | `delete` | `DELETE /channels/{channel.id}/messages/{message.id}` (204 → null) |
 | `api` | anything — raw passthrough |
@@ -86,6 +87,11 @@ response) keeps `reset-token` and `create` usable through UI changes.
   fetches is 1–100 (default 50 server-side; we default 25).
 - **Content cap.** Message `content` is ≤ 2000 characters for bots without
   premium; we enforce this client-side for a friendly usage error.
+- **Dates as snowflakes.** A snowflake holds Unix milliseconds minus 1420070400000, shifted left
+  22 bits, so `before=<that>` starts at a date in one step. `discord_messages` does this for
+  `until`, and stops its walk at `since`. It walks with `before` alone, because a read with
+  `after` starts from the oldest match. Its cursor holds the last message's id, so a deep page
+  costs what a first page does, and a message deleted between pages skips nothing.
 - **204s.** Some mutations (e.g. `DELETE /channels/{id}/messages/{id}` via
   `discord api`) return `204 No Content`; the client renders that as JSON
   `null`.

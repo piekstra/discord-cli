@@ -16,14 +16,14 @@ build:
 
 release: SIGN_TARGET = target/release/$(BIN)
 release:
-	$(CARGO) build --release
+	$(CARGO) build --release --locked
 	@$(SIGN)
 
 test:
-	$(CARGO) test --all
+	$(CARGO) test --all --locked
 
 lint:
-	$(CARGO) clippy --all-targets -- -D warnings
+	$(CARGO) clippy --all-targets --locked -- -D warnings
 
 fmt:
 	$(CARGO) fmt --all
@@ -42,9 +42,10 @@ deps:
 smoke: release
 	./target/release/$(BIN) --version
 	./target/release/$(BIN) --help >/dev/null
-	@for grp in auth me guilds channels messages send delete app config api self-update completions info; do \
+	@for grp in auth me guilds channels messages send delete app config api self-update completions info mcp; do \
 		./target/release/$(BIN) $$grp --help >/dev/null || exit 1; \
 	done
+	./target/release/$(BIN) mcp --list-tools >/dev/null
 	@echo "smoke ok"
 
 # Dependency license/advisory gate (matches CI). Needs cargo-deny installed.

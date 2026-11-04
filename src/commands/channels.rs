@@ -50,7 +50,7 @@ fn row(c: &Value) -> Value {
 }
 
 /// Human name for Discord's numeric channel type.
-fn type_name(t: i64) -> &'static str {
+pub(crate) fn type_name(t: i64) -> &'static str {
     match t {
         0 => "text",
         1 => "dm",

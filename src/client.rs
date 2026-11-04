@@ -7,7 +7,7 @@
 use std::time::Duration;
 
 use pk_cli_core::transport::secure_redirects;
-use pk_cli_core::CliError;
+use pk_cli_core::{CliError, Reason};
 use pk_cli_secrets::Secret;
 use serde_json::{json, Value};
 
@@ -19,10 +19,17 @@ pub const API_BASE: &str = "https://discord.com/api/v10";
 /// give up and surface the rate limit as an upstream error.
 const RATE_LIMIT_RETRIES: u32 = 2;
 const RATE_LIMIT_MAX_WAIT_SECS: f64 = 5.0;
+/// The most guilds Discord returns per request.
+const GUILD_PAGE: usize = 200;
+
+/// What a 403 says, so a tool can tell it from a token Discord refused: signing in again
+/// does not fix it.
+pub const NO_ACCESS: &str = "the bot lacks access or permissions";
 
 pub struct Discord {
     http: reqwest::blocking::Client,
     token: Secret,
+    base: String,
 }
 
 impl Discord {
@@ -41,7 +48,19 @@ impl Discord {
             .redirect(secure_redirects())
             .build()
             .map_err(|e| CliError::Other(format!("failed to build HTTP client: {e}")))?;
-        Ok(Discord { http, token })
+        Ok(Discord {
+            http,
+            token,
+            base: API_BASE.to_string(),
+        })
+    }
+
+    /// A client for a local stub. Tests only, so no release can send the token elsewhere.
+    #[cfg(test)]
+    pub fn at(base: &str, token: Secret) -> Result<Self, CliError> {
+        let mut client = Self::new(token)?;
+        client.base = base.to_string();
+        Ok(client)
     }
 
     /// One authenticated request. Waits out brief rate limits, then maps the
@@ -75,7 +94,7 @@ impl Discord {
     }
 
     fn get(&self, path: &str) -> Result<Value, CliError> {
-        self.request(reqwest::Method::GET, &format!("{API_BASE}{path}"), None)
+        self.request(reqwest::Method::GET, &format!("{}{path}", self.base), None)
     }
 
     /// The bot's own user (also serves as the cheap token verification).
@@ -86,6 +105,33 @@ impl Discord {
     /// Guilds the bot has joined (first page, up to 200).
     pub fn guilds(&self) -> Result<Value, CliError> {
         self.get("/users/@me/guilds")
+    }
+
+    /// Every guild the bot has joined, following Discord's pages.
+    pub fn all_guilds(&self) -> Result<Value, CliError> {
+        let mut all: Vec<Value> = Vec::new();
+        let mut after: Option<String> = None;
+        loop {
+            let path = match &after {
+                Some(id) => format!("/users/@me/guilds?limit={GUILD_PAGE}&after={id}"),
+                None => format!("/users/@me/guilds?limit={GUILD_PAGE}"),
+            };
+            let Value::Array(page) = self.get(&path)? else {
+                return Err(CliError::Upstream(
+                    "Discord did not answer with a list of guilds".into(),
+                ));
+            };
+            let full = page.len() == GUILD_PAGE;
+            all.extend(page);
+            after = all
+                .last()
+                .and_then(|g| g.get("id"))
+                .and_then(Value::as_str)
+                .map(str::to_string);
+            if !full || after.is_none() {
+                return Ok(Value::Array(all));
+            }
+        }
     }
 
     pub fn guild_channels(&self, guild_id: &str) -> Result<Value, CliError> {
@@ -174,12 +220,15 @@ fn into_value(resp: reqwest::blocking::Response) -> Result<Value, CliError> {
     }
     let detail = error_detail(resp.json::<Value>().ok());
     match status.as_u16() {
-        401 => Err(CliError::Auth(format!(
-            "Discord rejected the bot token (HTTP 401{detail}) — run `discord auth login` again"
-        ))),
-        403 => Err(CliError::Auth(format!(
-            "the bot lacks access or permissions (HTTP 403{detail})"
-        ))),
+        401 => Err(
+            CliError::Auth(format!("Discord rejected the bot token (HTTP 401{detail})"))
+                .because(Reason::CredentialRefused)
+                .with_remedy("run `discord auth login` again"),
+        ),
+        403 => {
+            Err(CliError::Auth(format!("{NO_ACCESS} (HTTP 403{detail})"))
+                .because(Reason::Forbidden))
+        }
         404 => Err(CliError::NotFound(format!("HTTP 404 from Discord{detail}"))),
         429 => Err(CliError::Upstream(format!(
             "rate limited by Discord (HTTP 429{detail})"
@@ -264,6 +313,66 @@ mod tests {
             .unwrap_err();
         assert!(err.to_string().contains("leaves https"), "{err}");
         assert_eq!(seen.lock().unwrap().len(), 1);
+    }
+
+    fn answered(status: u16) -> CliError {
+        let (base, _) = stub(move |_| {
+            let body = r#"{"message": "An example refusal", "code": 1}"#;
+            format!(
+                "HTTP/1.1 {status} Refused\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                body.len()
+            )
+        });
+        Discord::at(&base, Secret::new("dummy-token"))
+            .unwrap()
+            .me()
+            .unwrap_err()
+    }
+
+    #[test]
+    fn a_401_and_a_403_are_told_apart_by_type_and_both_exit_3() {
+        let refused = answered(401);
+        assert_eq!(refused.reason(), Some(Reason::CredentialRefused));
+        assert!(refused.is_auth());
+        assert_eq!(refused.remedy(), Some("run `discord auth login` again"));
+
+        let forbidden = answered(403);
+        assert_eq!(forbidden.reason(), Some(Reason::Forbidden));
+        assert!(forbidden.is_auth());
+        assert!(forbidden.message().starts_with(NO_ACCESS), "{forbidden}");
+        assert!(
+            forbidden.message().contains("An example refusal"),
+            "{forbidden}"
+        );
+    }
+
+    #[test]
+    fn all_guilds_follows_the_pages_to_a_short_one() {
+        let (base, seen) = stub(|request| {
+            let rows: Vec<Value> = if request.contains("after=") {
+                vec![json!({"id": "1200", "name": "Example"})]
+            } else {
+                (0..GUILD_PAGE)
+                    .map(|i| json!({"id": (1000 + i).to_string(), "name": "Example"}))
+                    .collect()
+            };
+            let body = Value::Array(rows).to_string();
+            format!(
+                "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                body.len()
+            )
+        });
+        let got = Discord::at(&base, Secret::new("dummy-token"))
+            .unwrap()
+            .all_guilds()
+            .unwrap();
+        assert_eq!(got.as_array().unwrap().len(), GUILD_PAGE + 1);
+        let seen = seen.lock().unwrap();
+        assert_eq!(seen.len(), 2);
+        assert!(
+            seen[1].contains(&format!("after={}", 1000 + GUILD_PAGE - 1)),
+            "{seen:?}"
+        );
     }
 
     #[test]

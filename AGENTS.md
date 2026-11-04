@@ -14,6 +14,11 @@ The endpoints used and Discord-specific gotchas (privileged intents, rate
 limits, permissions) are in [`docs/api.md`](docs/api.md) — read it before
 touching `src/client.rs`.
 
+`discord mcp` (`src/mcp.rs`) serves three read-only tools. **Never add a tool that
+sends, edits, deletes or moderates**: a model reads text there that anyone in a
+channel wrote, so such a tool would be steerable by that text. `src/mcp/tests.rs`
+holds the definitions and the requests to that.
+
 ## Local map
 
 | Path | Responsibility |
@@ -30,8 +35,13 @@ touching `src/client.rs`.
 
 ## Durable conventions (do not drift)
 
-- **Secrets: keychain-only at runtime.** The bot token is read only from the
-  OS keychain (service `piekstra.discord`, account `bot-token`). It gets there
+- **Secrets: the keychain at runtime, and `discord mcp` through the resolver.**
+  A command reads the bot token only from the OS keychain (service
+  `piekstra.discord`, account `bot-token`). `discord mcp` reads it through
+  `SecretResolver`, from `$DISCORD_BOT_TOKEN` (how the Claude Desktop extension
+  passes it) and then the keychain, in the order `secret_sources` or
+  `$DISCORD_SECRET_SOURCES` sets. An order naming `op` is refused, since the token has no
+  1Password reference. It gets to the keychain
   via `auth login` / `auth set-credential`, which ingest from `--stdin`,
   `--from-env <VAR>`, or a no-echo prompt — **never a `--token` flag** (leaks
   into `ps`, history, transcripts). Wrap secrets in `pk_cli_secrets::Secret`;
@@ -91,7 +101,7 @@ global `--json`, canonical DTOs (`auth-status/v1`, `self-update/v1`,
 
 - **Don't fork shared behavior.** Error/exit-code handling, output rendering,
   keychain secrets, config storage, and self-update come from the `pk-cli-*`
-  crates (tag-pinned git deps on cli-common). If you need a change there — or
+  crates (tag-pinned git deps on cli-common, currently **v0.28.0**). If you need a change there — or
   you're writing anything reusable across the family CLIs — add it to
   cli-common, cut a tag, and bump the pin here. Never copy shared code into
   this repo.

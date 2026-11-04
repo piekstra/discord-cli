@@ -1,0 +1,4 @@
+[
+  { "id": "1000000000000000001", "name": "Example Server", "owner": false, "icon": null, "permissions": "0" },
+  { "id": "1000000000000000002", "name": "Another Example", "owner": true, "icon": null, "permissions": "0" }
+]

@@ -10,7 +10,7 @@ use pk_cli_core::CliError;
 use pk_cli_secrets::Secret;
 use serde_json::Value;
 
-use crate::cli::AuthCmd;
+use crate::cli::{AuthCmd, BIN};
 use crate::client::Discord;
 use crate::commands::{Ctx, ACCOUNT};
 use crate::config::Config;
@@ -73,23 +73,45 @@ fn status(ctx: &Ctx) -> Result<(), CliError> {
 fn logout(ctx: &Ctx, args: &LogoutArgs) -> Result<(), CliError> {
     if args.forget {
         let removed = ctx.creds.delete(ACCOUNT)?;
+        // Nothing records whether `mcp --new-token` ran, so this is ungated: a keyring that is
+        // not running, or a prompt declined, must not leave the config behind it.
+        let connector = ctx.creds.delete(pk_cli_mcp::HTTP_TOKEN_ACCOUNT);
         ctx.store.clear()?;
+        connector.map_err(connector_token_stays)?;
         if !ctx.cli.common.quiet {
             eprintln!(
-                "{}",
+                "{}; any connector token was removed too",
                 if removed {
                     "bot token removed from the keychain"
                 } else {
                     "no bot token was stored"
                 }
             );
+            eprintln!("{}", pk_cli_mcp::stop_note(BIN));
+            eprintln!("{EXTENSION_NOTE}");
         }
     } else if !ctx.cli.common.quiet {
         // Bot tokens have no server-side session to end.
-        eprintln!("nothing to do — pass --forget to remove the stored bot token");
+        eprintln!(
+            "nothing to do — pass --forget to remove the stored bot token and connector token"
+        );
     }
     Ok(())
 }
+
+/// What a failed token delete still leaves true. Nothing, if `mcp --new-token` never ran here.
+fn connector_token_stays(failure: CliError) -> CliError {
+    CliError::Keychain(format!(
+        "the bot token and config are cleared, but the connector token of `{BIN} mcp --http` could \
+         not be removed, if there is one: {failure}"
+    ))
+}
+
+/// What `--forget` cannot reach beyond the connector token.
+const EXTENSION_NOTE: &str =
+    "note: the Claude Desktop extension and $DISCORD_BOT_TOKEN keep their \
+     own copy of the bot token, until you remove the extension or clear the setting; revoking the \
+     bot itself is on Discord's developer portal";
 
 fn set_credential(ctx: &Ctx, args: &SetCredentialArgs) -> Result<(), CliError> {
     if ctx.creds.get(ACCOUNT)?.is_some() && !args.overwrite {
@@ -106,7 +128,7 @@ fn set_credential(ctx: &Ctx, args: &SetCredentialArgs) -> Result<(), CliError> {
 }
 
 /// Trim whitespace and a pasted `Bot ` prefix; reject an empty result.
-fn normalize_token(raw: &Secret) -> Result<Secret, CliError> {
+pub(crate) fn normalize_token(raw: &Secret) -> Result<Secret, CliError> {
     let trimmed = raw.expose().trim();
     let trimmed = trimmed.strip_prefix("Bot ").unwrap_or(trimmed).trim();
     if trimmed.is_empty() {
